@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+sqlalchemy
+psycopg2-binary
+pandas
+openpyxl
+selenium
+webdriver-manager
+requests
+supabase
+python-dotenv
