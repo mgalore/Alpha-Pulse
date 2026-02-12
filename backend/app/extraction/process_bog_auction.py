@@ -218,9 +218,13 @@ def upload_to_supabase(results: Dict):
         except Exception as e:
             logger.error(f"Failed to upload summary: {e}")
 
-def process_bog_auction(pdf_path: str):
-    """Main entry point"""
-    results = parse_bog_auction_pdf(pdf_path)
+def process_bog_auction(filepath: str, override_date: str = None):
+    """Process BoG auction PDF and extract structured data"""
+    results = parse_bog_auction_pdf(filepath)
+    
+    # Override date if provided
+    if override_date:
+        results["auction_date"] = override_date
     
     logger.info(f"\n=== PARSED DATA ===")
     logger.info(f"Auction Date: {results['auction_date']}")
@@ -236,8 +240,12 @@ def process_bog_auction(pdf_path: str):
 
 if __name__ == "__main__":
     import sys
-    if len(sys.argv) > 1:
-        process_bog_auction(sys.argv[1])
-    else:
-        print("Usage: python process_bog_auction.py <pdf_path>")
-        print("Example: python process_bog_auction.py downloads/bog_auction_1993.pdf")
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='Process BoG auction PDF')
+    parser.add_argument('pdf_path', help='Path to BoG auction PDF file')
+    parser.add_argument('--date', help='Override auction date (YYYY-MM-DD format)', default=None)
+    
+    args = parser.parse_args()
+    
+    process_bog_auction(args.pdf_path, args.date)

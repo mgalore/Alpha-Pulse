@@ -618,9 +618,33 @@ def run_quant_engine(trade_date: str):
     logger.info("=== QUANT ENGINE COMPLETE ===")
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1:
-        date_arg = sys.argv[1]
-    else:
-        date_arg = datetime.now().strftime("%Y-%m-%d")
+    import argparse
     
-    run_quant_engine(date_arg)
+    parser = argparse.ArgumentParser(description='Run quant engine to calculate metrics')
+    parser.add_argument('--date', help='Date to process (YYYY-MM-DD format)', default=None)
+    parser.add_argument('--start-date', help='Start date for batch processing (YYYY-MM-DD)', default=None)
+    parser.add_argument('--end-date', help='End date for batch processing (YYYY-MM-DD)', default=None)
+    
+    args = parser.parse_args()
+    
+    if args.start_date and args.end_date:
+        # Batch processing
+        from datetime import datetime, timedelta
+        start = datetime.strptime(args.start_date, "%Y-%m-%d")
+        end = datetime.strptime(args.end_date, "%Y-%m-%d")
+        
+        current = start
+        while current <= end:
+            date_str = current.strftime("%Y-%m-%d")
+            logger.info(f"\n{'='*60}")
+            logger.info(f"Processing date: {date_str}")
+            logger.info(f"{'='*60}")
+            try:
+                run_quant_engine(date_str)
+            except Exception as e:
+                logger.error(f"Failed to process {date_str}: {e}")
+            current += timedelta(days=1)
+    else:
+        # Single date processing
+        date_arg = args.date if args.date else datetime.now().strftime("%Y-%m-%d")
+        run_quant_engine(date_arg)
