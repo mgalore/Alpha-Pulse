@@ -44,7 +44,7 @@ if summary:
 st.divider()
 
 # Tabs
-tab1, tab2, tab3, tab4 = st.tabs(["📈 Yield Curve", "💰 Corporate Spreads", "🔔 Alerts", "📊 Top Securities"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["📈 Yield Curve", "💰 Corporate Spreads", "🔔 Alerts", "📊 Top Securities", "🏦 BoG Auctions"])
 
 with tab1:
     st.subheader("Ghana Sovereign Yield Curve")
@@ -83,27 +83,31 @@ with tab2:
     if spreads and spreads.get("spreads"):
         df_spreads = pd.DataFrame(spreads["spreads"])
         
-        # Get issuer info
-        df_spreads["display_name"] = df_spreads["isin"]
-        
+        # Use ISIN for chart display
         fig = go.Figure()
         fig.add_trace(go.Bar(
-            x=df_spreads["display_name"],
+            x=df_spreads["isin"],
             y=df_spreads["spread_vs_govt"],
             marker_color='#FF6B6B',
             text=df_spreads["spread_vs_govt"].round(2),
-            textposition='outside'
+            textposition='outside',
+            hovertemplate='<b>%{customdata[0]}</b><br>ISIN: %{x}<br>Spread: %{y:.2f}%<br>YTM: %{customdata[1]:.2f}%<extra></extra>',
+            customdata=df_spreads[["issuer", "ytm"]].values
         ))
         
         fig.update_layout(
-            xaxis_title="Security",
+            xaxis_title="ISIN",
             yaxis_title="Spread vs GOG (%)",
-            height=400
+            height=400,
+            xaxis_tickangle=-45
         )
         
         st.plotly_chart(fig, use_container_width=True)
         
-        st.dataframe(df_spreads[["isin", "ytm", "benchmark_yield", "spread_vs_govt", "liquidity_score"]], use_container_width=True)
+        # Show table with issuer names
+        display_df = df_spreads[["issuer", "isin", "ytm", "benchmark_yield", "spread_vs_govt", "liquidity_score"]].copy()
+        display_df.columns = ["Issuer", "ISIN", "YTM (%)", "Benchmark (%)", "Spread (%)", "Liquidity"]
+        st.dataframe(display_df, use_container_width=True)
     else:
         st.info("No corporate spread data available")
 
@@ -135,13 +139,104 @@ with tab4:
     if top_securities and top_securities.get("top_securities"):
         df_top = pd.DataFrame(top_securities["top_securities"])
         
-        st.dataframe(
-            df_top[["isin", "security_type", "ytm", "real_yield", "volume", "liquidity_score"]],
-            use_container_width=True
-        )
+        # Rename columns for better display
+        display_df = df_top[["issuer", "isin", "security_type", "ytm", "real_yield", "volume", "liquidity_score"]].copy()
+        display_df.columns = ["Issuer", "ISIN", "Type", "YTM (%)", "Real Yield (%)", "Volume", "Liquidity"]
+        
+        st.dataframe(display_df, use_container_width=True)
     else:
         st.info("No data available")
 
 # Footer
 st.sidebar.divider()
 st.sidebar.info("**Alpha-Pulse GFIM** v1.0\n\nReal-time Ghana Fixed Income Analytics")
+
+
+with tab5:
+    st.subheader("Bank of Ghana Auction Results (Primary Market)")
+    
+    auction_data = fetch_data("bog-auction-results", {"date": selected_date})
+    
+    if auction_data and auction_data.get("results"):
+        df_auction = pd.DataFrame(auction_data["results"])
+        
+        # Display key metrics
+        col1, col2, col3 = st.columns(3)
+        
+        total_tendered = df_auction["amount_tendered"].sum()
+        total_accepted = df_auction["amount_accepted"].sum()
+        avg_bid_cover = df_auction["bid_cover_ratio"].mean()
+        
+        with col1:
+            st.metric("Total Tendered", f"GH₵ {total_tendered:,.0f}M")
+        with col2:
+            st.metric("Total Accepted", f"GH₵ {total_accepted:,.0f}M")
+        with col3:
+            st.metric("Avg Bid-Cover Ratio", f"{avg_bid_cover:.2f}x")
+        
+        # Bid-Cover Ratio Chart
+        st.markdown("#### Bid-Cover Ratio by Tenor")
+        fig = go.Figure()
+        fig.add_trace(go.Bar(
+            x=df_auction["tenor"],
+            y=df_auction["bid_cover_ratio"],
+            marker_color='#3ECF8E',
+            text=df_auction["bid_cover_ratio"].round(2),
+            textposition='outside',
+            hovertemplate='<b>%{x}</b><br>Bid-Cover: %{y:.2f}x<br>Rate: %{customdata:.2f}%<extra></extra>',
+            customdata=df_auction["weighted_average_rate"]
+        ))
+        
+        fig.update_layout(
+            xaxis_title="Tenor",
+            yaxis_title="Bid-Cover Ratio",
+            height=350
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Rates Comparison
+        st.markdown("#### Auction Rates")
+        fig2 = go.Figure()
+        fig2.add_trace(go.Scatter(
+            x=df_auction["tenor"],
+            y=df_auction["discount_rate"],
+            mode='lines+markers',
+            name='Discount Rate',
+            line=dict(color='#FF6B6B', width=3),
+            marker=dict(size=10)
+        ))
+        fig2.add_trace(go.Scatter(
+            x=df_auction["tenor"],
+            y=df_auction["interest_rate"],
+            mode='lines+markers',
+            name='Interest Rate',
+            line=dict(color='#4ECDC4', width=3),
+            marker=dict(size=10)
+        ))
+        
+        fig2.update_layout(
+            xaxis_title="Tenor",
+            yaxis_title="Rate (%)",
+            height=350,
+            hovermode='x unified'
+        )
+        
+        st.plotly_chart(fig2, use_container_width=True)
+        
+        # Data Table
+        st.markdown("#### Detailed Results")
+        display_df = df_auction[["tenor", "isin", "amount_tendered", "amount_accepted", "bid_cover_ratio", "discount_rate", "interest_rate"]].copy()
+        display_df.columns = ["Tenor", "ISIN", "Tendered (M)", "Accepted (M)", "Bid-Cover", "Discount Rate (%)", "Interest Rate (%)"]
+        st.dataframe(display_df, use_container_width=True)
+        
+        # Market Insights
+        st.markdown("#### 💡 Market Insights")
+        if avg_bid_cover > 2.5:
+            st.success(f"🔥 Strong demand! Bid-cover ratio of {avg_bid_cover:.2f}x indicates high investor appetite for government securities.")
+        elif avg_bid_cover > 1.5:
+            st.info(f"✅ Healthy demand with {avg_bid_cover:.2f}x bid-cover ratio.")
+        else:
+            st.warning(f"⚠️ Weak demand. Bid-cover ratio of {avg_bid_cover:.2f}x suggests limited investor interest.")
+    else:
+        st.info(f"No auction data available for {selected_date}")

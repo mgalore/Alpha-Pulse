@@ -48,12 +48,15 @@ MATURITY_BUCKETS = [
 
 # All possible keys for security_metrics - ensures consistent schema
 METRIC_KEYS = [
-    "date", "isin", "security_type",
+    "date", "isin", "security_type", "issuer",
     "ytm", "discount_yield", "bond_equivalent_yield", "real_yield", "coupon_rate",
     "volume", "turnover_ratio", "hl_spread", "liquidity_score",
     "modified_duration", "convexity", "z_spread", "corporate_spread",
     "benchmark_yield", "spread_vs_govt", "volume_avg_30d", "volume_spike_flag", "liquidity_flag"
 ]
+
+# Cache for issuer lookups
+_issuer_cache = {}
 
 # Volume spike threshold (300% of average)
 VOLUME_SPIKE_THRESHOLD = 3.0
@@ -68,6 +71,29 @@ def get_maturity_bucket(days: int) -> str:
         if low <= days <= high:
             return bucket
     return "20Y+"
+
+def get_issuer_for_isin(isin: str, security_type: str) -> str:
+    """Get issuer name for an ISIN, with caching"""
+    if isin in _issuer_cache:
+        return _issuer_cache[isin]
+    
+    # Default issuers for government securities
+    if security_type in ["GOG_BOND", "TBILL"]:
+        issuer = "Government of Ghana"
+    else:
+        # Look up in issuer_securities table
+        try:
+            response = supabase.table("issuer_securities").select("issuer").eq("isin", isin).execute()
+            if response.data and len(response.data) > 0:
+                issuer = response.data[0].get("issuer", "Unknown")
+            else:
+                issuer = "Unknown"
+        except Exception as e:
+            logger.warning(f"Could not fetch issuer for {isin}: {e}")
+            issuer = "Unknown"
+    
+    _issuer_cache[isin] = issuer
+    return issuer
 
 # --- YTM Calculations ---
 
@@ -207,6 +233,7 @@ def process_gog_bonds(trade_date: str, table_name: str, security_type: str) -> L
     metrics = []
     for r in records:
         try:
+            isin = r["isin"]
             price = r.get("closing_price")
             days = r.get("days_to_maturity")
             desc = r.get("security_description")
@@ -233,8 +260,9 @@ def process_gog_bonds(trade_date: str, table_name: str, security_type: str) -> L
             
             metrics.append({
                 "date": trade_date,
-                "isin": r["isin"],
+                "isin": isin,
                 "security_type": security_type,
+                "issuer": get_issuer_for_isin(isin, security_type),
                 "ytm": ytm,
                 "real_yield": real_yield,
                 "coupon_rate": coupon,
@@ -258,6 +286,7 @@ def process_tbills(trade_date: str) -> List[Dict]:
     metrics = []
     for r in records:
         try:
+            isin = r["isin"]
             price = r.get("closing_price")
             days = r.get("days_to_maturity")
             
@@ -277,8 +306,9 @@ def process_tbills(trade_date: str) -> List[Dict]:
             
             metrics.append({
                 "date": trade_date,
-                "isin": r["isin"],
+                "isin": isin,
                 "security_type": "TBILL",
+                "issuer": get_issuer_for_isin(isin, "TBILL"),
                 "ytm": yields.get("ytm"),
                 "discount_yield": yields.get("discount_yield"),
                 "bond_equivalent_yield": yields.get("bond_equivalent_yield"),
@@ -303,6 +333,7 @@ def process_corporate(trade_date: str) -> List[Dict]:
     metrics = []
     for r in records:
         try:
+            isin = r["isin"]
             price = r.get("closing_price")
             days = r.get("days_to_maturity")
             desc = r.get("security_description")
@@ -323,8 +354,9 @@ def process_corporate(trade_date: str) -> List[Dict]:
             
             metrics.append({
                 "date": trade_date,
-                "isin": r["isin"],
+                "isin": isin,
                 "security_type": "CORPORATE",
+                "issuer": get_issuer_for_isin(isin, "CORPORATE"),
                 "ytm": ytm,
                 "real_yield": real_yield,
                 "coupon_rate": coupon,

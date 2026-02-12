@@ -94,7 +94,7 @@ def get_corporate_spreads(date: Optional[str] = None):
             date = datetime.now().strftime("%Y-%m-%d")
         
         response = supabase.table("security_metrics")\
-            .select("isin, ytm, spread_vs_govt, benchmark_yield, liquidity_score")\
+            .select("isin, issuer, ytm, spread_vs_govt, benchmark_yield, liquidity_score")\
             .eq("date", date)\
             .eq("security_type", "CORPORATE")\
             .not_.is_("spread_vs_govt", "null")\
@@ -133,7 +133,7 @@ def get_top_securities(metric: str = "ytm", limit: int = 10, date: Optional[str]
             raise HTTPException(status_code=400, detail=f"Invalid metric. Use: {valid_metrics}")
         
         response = supabase.table("security_metrics")\
-            .select("isin, security_type, ytm, real_yield, volume, spread_vs_govt, liquidity_score")\
+            .select("isin, issuer, security_type, ytm, real_yield, volume, spread_vs_govt, liquidity_score")\
             .eq("date", date)\
             .not_.is_(metric, "null")\
             .order(metric, desc=True)\
@@ -158,6 +158,72 @@ def get_treasury_bills(date: Optional[str] = None):
             .execute()
         
         return {"date": date, "tbills": response.data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/bog-auction-results")
+def get_bog_auction_results(date: Optional[str] = None, days: int = 30):
+    """Get BoG auction results"""
+    try:
+        if date:
+            response = supabase.table("bog_auction_results")\
+                .select("*")\
+                .eq("auction_date", date)\
+                .order("tenor")\
+                .execute()
+        else:
+            cutoff_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+            response = supabase.table("bog_auction_results")\
+                .select("*")\
+                .gte("auction_date", cutoff_date)\
+                .order("auction_date", desc=True)\
+                .execute()
+        
+        return {"results": response.data, "count": len(response.data)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/bog-auction-summary")
+def get_bog_auction_summary(days: int = 90):
+    """Get BoG auction summary over time"""
+    try:
+        cutoff_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+        
+        response = supabase.table("bog_auction_summary")\
+            .select("*")\
+            .gte("auction_date", cutoff_date)\
+            .order("auction_date", desc=True)\
+            .execute()
+        
+        return {"summaries": response.data, "count": len(response.data)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/primary-vs-secondary")
+def compare_primary_vs_secondary(date: Optional[str] = None):
+    """Compare primary market (auction) vs secondary market (GFIM) rates"""
+    try:
+        if not date:
+            date = datetime.now().strftime("%Y-%m-%d")
+        
+        # Get auction data
+        auction_response = supabase.table("bog_auction_results")\
+            .select("tenor, weighted_average_rate, amount_tendered, amount_accepted, bid_cover_ratio")\
+            .eq("auction_date", date)\
+            .execute()
+        
+        # Get secondary market data for T-Bills
+        secondary_response = supabase.table("security_metrics")\
+            .select("isin, ytm, volume")\
+            .eq("date", date)\
+            .eq("security_type", "TBILL")\
+            .execute()
+        
+        return {
+            "date": date,
+            "primary_market": auction_response.data,
+            "secondary_market": secondary_response.data
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
