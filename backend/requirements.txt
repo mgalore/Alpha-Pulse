@@ -9,3 +9,7 @@ webdriver-manager
 requests
 supabase
 python-dotenv
+streamlit
+plotly
+pdfplumber
+tabula-py

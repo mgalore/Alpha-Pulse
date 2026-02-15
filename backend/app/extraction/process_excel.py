@@ -255,7 +255,18 @@ def process_excel(filepath):
 
 if __name__ == "__main__":
     import sys
-    if len(sys.argv) > 1:
-        process_excel(sys.argv[1])
-    else:
-        print("Usage: python process_excel.py <filepath>")
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='Process GFIM Excel trading reports')
+    parser.add_argument('filepath', help='Path to Excel file')
+    parser.add_argument('--date', help='Override trade date (YYYY-MM-DD format)', default=None)
+    
+    args = parser.parse_args()
+    
+    # Override date if provided
+    if args.date:
+        global parse_date_from_filename
+        original_parse = parse_date_from_filename
+        parse_date_from_filename = lambda x: args.date
+    
+    process_excel(args.filepath)
